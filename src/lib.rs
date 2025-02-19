@@ -157,18 +157,13 @@ impl App {
     }
 
     fn handle_image(&self, filename: &str, status: StatusCode, stream: &mut TcpStream) {
-        let content = fs::read(filename).unwrap();
+        let content: &[u8] = &fs::read(filename).unwrap();
         let length = content.len();
-        let response_display  =format!("{status}\r\nContent-Length: {length}\r\n\r\n<snip>");
-
-        let mut content_string = String::new();
-        for b in content.iter() {
-            content_string.push_str(&format!("\\x{b:02x}"))
-        }
-
-        let response = format!("{status}\r\nContent-Length: {length}\r\n\r\n{content_string}");
-        print!("Response: {response}\n");
-        stream.write_all(response.as_bytes()).unwrap();
+        let response = format!("{status}\r\nContent-Length: {length}\r\n\r\n");
+        print!("Response: {response}<snip>\n");
+        stream
+            .write_all(&[response.as_bytes(), content].concat())
+            .unwrap();
     }
 
     fn handle_not_found(&self, stream: &mut TcpStream) {
