@@ -1,4 +1,4 @@
-use wwwdaanlubbersnl::{App, AppConfig, RequestType, Resource, ResourceType, Response, StatusCode};
+use wwwdaanlubbersnl::webserver::{App, AppConfig, RequestType, Resource, ResourceType, Response, StatusCode};
 
 fn main() {
     let config = AppConfig::new("127.0.0.1", 7878, 4);
