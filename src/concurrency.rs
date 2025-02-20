@@ -1,6 +1,7 @@
 use std::{
     sync::{mpsc, Arc, Mutex},
     thread,
+    time,
 };
 
 pub struct ThreadPool {
@@ -102,3 +103,46 @@ impl Worker {
 }
 
 type Job = Box<dyn FnOnce() + Send + 'static>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[should_panic]
+    fn threadpool_new_panics_with_zero_size() {
+        ThreadPool::new(0);
+    }
+
+    #[test]
+    fn threadpool_new() {
+        let pool = ThreadPool::new(1);        
+        assert_eq!(pool.workers.len(), 1);
+        let pool = ThreadPool::new(4);        
+        assert_eq!(pool.workers.len(), 4);
+        let pool = ThreadPool::new(32);        
+        assert_eq!(pool.workers.len(), 32);
+    }
+
+    #[test]
+    fn threadpool_execute() {
+        let pool = ThreadPool::new(4);
+        for _ in 0..99 {
+            pool.execute(|| {
+                thread::sleep(time::Duration::from_millis(10));
+            });
+        }
+    }
+
+    #[test]
+    fn worker_stops_when_sender_disconnects() {
+        let (sender, receiver) = mpsc::channel();
+
+        let receiver = Arc::new(Mutex::new(receiver));
+        let mut worker = Worker::new(0, receiver);
+        drop(sender);
+        if let Some(thread) = worker.thread.take() {
+            thread.join().unwrap();
+        }
+    }
+}
