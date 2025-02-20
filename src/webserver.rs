@@ -99,6 +99,7 @@ pub struct App {
     config: AppConfig,
     resources: Vec<Resource>,
     resource_404: Option<Resource>,
+    resource_500: Option<Resource>,
 }
 
 impl App {
@@ -107,21 +108,30 @@ impl App {
             config,
             resources: vec![],
             resource_404: None,
+            resource_500: None,
         }
     }
 
     pub fn run(self) {
         let ip = self.config.ip;
         let port = self.config.port;
-        let listener = TcpListener::bind(format!("{ip}:{port}")).unwrap();
+        let listener = match TcpListener::bind(format!("{ip}:{port}")) {
+            Ok(listener) => listener,
+            Err(e) => panic!("Failed to bind to {ip}:{port}: {e:?}\n")
+
+        };
         let pool = ThreadPool::new(self.config.num_threads);
         let app = Arc::new(self);
 
         for stream in listener.incoming() {
-            let stream = stream.unwrap();
-            let app_clone = Arc::clone(&app);
+            match stream {
+                Ok(stream) => {
+                    let app_clone = Arc::clone(&app);
 
-            pool.execute(move || app_clone.handle_request(stream));
+                    pool.execute(move || app_clone.handle_request(stream));
+                }
+                Err(e) => { print!("Connection Failed: {e:?}") }
+            }
         }
     }
 
@@ -133,6 +143,10 @@ impl App {
         self.resource_404 = Some(resource);
     }
 
+    pub fn register_resource_500(&mut self, resource: Resource) {
+        self.resource_500 = Some(resource);
+    }
+
     fn get_resource(&self, request_type: RequestType, path: &str) -> Option<&Resource> {
         self.resources
             .iter()
@@ -140,7 +154,16 @@ impl App {
     }
 
     fn handle_resource(&self, resource: &Resource, stream: &mut TcpStream) {
-        let response = resource.handle().unwrap();
+        let response = match resource.handle() {
+            Ok(response) => response,
+            Err(_) => match &self.resource_500 {
+                Some(resource) => match resource.handle() {
+                    Ok(response) => response,
+                    Err(_) => Response::new(StatusCode::InternalServerError, ""),
+                }
+                None => Response::new(StatusCode::InternalServerError, ""),
+            }
+        };
         let path = response.path;
         let status = response.status_code;
 
@@ -151,29 +174,69 @@ impl App {
         }
     }
 
-    fn handle_html(&self, path: &str, status: StatusCode, stream: &mut TcpStream) {
-        let content = fs::read_to_string(path).unwrap();
+    fn handle_html(&self, path: &str, mut status: StatusCode, stream: &mut TcpStream) {
+        let content = match fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(_) => {
+                let resource = &self.resource_404;
+                match resource {
+                    Some(resource) => {
+                        self.handle_resource(&resource, stream);
+                        return;
+                    }
+                    None => {
+                        status = StatusCode::NotFound;
+                        "".to_string()
+                    }
+                }
+            }
+        };
         let length = content.len();
         let response = format!("{status}\r\nContent-Length: {length}\r\n\r\n{content}");
 
         print!("Response: {response}\n");
-        stream.write_all(response.as_bytes()).unwrap();
+        match stream.write_all(response.as_bytes()) {
+            Err(e) => print!("Failed to write to stream: {e:?}\n"),
+            _ => {}
+        }
     }
 
-    fn handle_image(&self, path: &str, status: StatusCode, stream: &mut TcpStream) {
-        let content: &[u8] = &fs::read(path).unwrap();
+    fn handle_image(&self, path: &str, mut status: StatusCode, stream: &mut TcpStream) {
+        let content = match fs::read(path) {
+            Ok(content) => content,
+            Err(_) => {
+                let resource = &self.resource_404;
+                match resource {
+                    Some(resource) => {
+                        self.handle_resource(&resource, stream);
+                        return;
+                    }
+                    None => {
+                        status = StatusCode::NotFound;
+                        vec![]
+                    }
+                }
+            }
+        };
+        
         let length = content.len();
         let response = format!("{status}\r\nContent-Length: {length}\r\n\r\n");
+
         print!("Response: {response}<snip>\n");
-        stream
-            .write_all(&[response.as_bytes(), content].concat())
-            .unwrap();
+        match stream.write_all(&[response.as_bytes(), &content].concat()) {
+            Err(e) => print!("Failed to write to stream: {e:?}\n"),
+            _ => {}
+        }
     }
 
     fn handle_redirect(&self, path: &str, status: StatusCode, stream: &mut TcpStream) {
         let response = format!("{status}\r\nLocation: {path}\r\nContent-Length: 0\r\n\r\n");
+
         print!("Response: {response}\n");
-        stream.write_all(response.as_bytes()).unwrap();
+        match stream.write_all(response.as_bytes()) {
+            Err(e) => print!("Failed to write to stream: {e:?}\n"),
+            _ => {}
+        }
     }
 
     fn handle_not_found(&self, stream: &mut TcpStream) {
@@ -183,14 +246,29 @@ impl App {
             None => {
                 let response = format!("{}\r\nContent-Length: 0\r\n\r\n", StatusCode::NotFound);
                 print!("Response: {response}\n");
-                stream.write_all(response.as_bytes()).unwrap();
+                match stream.write_all(response.as_bytes()) {
+                    Err(e) => print!("Failed to write to stream: {e:?}\n"),
+                    _ => {}
+                }
             }
         }
     }
 
     fn handle_request(&self, mut stream: TcpStream) {
         let buf_reader = BufReader::new(&stream);
-        let request_line = buf_reader.lines().next().unwrap().unwrap();
+        let request_line = match buf_reader.lines().next() {
+            Some(line) => match line {
+                Ok(line) => line,
+                Err(e) => {
+                    print!("Failed to read request line: {e:?}\n");
+                    return;
+                }
+            }
+            None => {
+                print!("Empty request\n");
+                return;
+            }
+        };
 
         print!("Request: {request_line}\n");
 

@@ -30,6 +30,13 @@ fn create_app(config: AppConfig) -> App {
         || Ok(Response::new(StatusCode::NotFound, "static/404.html")),
     ));
 
+    app.register_resource_500(Resource::new(
+        RequestType::GET,
+        "/500",
+        ResourceType::HTML,
+        || Ok(Response::new(StatusCode::InternalServerError, "static/500.html")),
+    ));
+
     app.register_resource(Resource::new(
         RequestType::GET,
         "/maria",

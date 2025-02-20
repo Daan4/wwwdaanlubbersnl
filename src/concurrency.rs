@@ -71,7 +71,7 @@ impl Worker {
     ///
     /// Todo: use std::thread::Builder and handle panics
     fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
-        let thread = thread::spawn(move || loop {
+        let thread = thread::Builder::new().name(format!("Worker {}", id)).spawn(move || loop {
             let message = receiver.lock().unwrap().recv();
 
             match message {
@@ -86,6 +86,11 @@ impl Worker {
                 }
             }
         });
+
+        let thread = match thread {
+            Ok(thread) => thread,
+            Err(e) => panic!("Failed to create thread: {e:?}"),
+        };
 
         Worker {
             id,
