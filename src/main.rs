@@ -1,4 +1,6 @@
-use wwwdaanlubbersnl::webserver::{App, AppConfig, RequestType, Resource, ResourceType, Response, StatusCode};
+use wwwdaanlubbersnl::webserver::{
+    App, AppConfig, RequestType, Resource, ResourceType, Response, StatusCode,
+};
 
 fn main() {
     let config = AppConfig::new("127.0.0.1", 7878, 4);
@@ -34,14 +36,24 @@ fn create_app(config: AppConfig) -> App {
         RequestType::GET,
         "/500",
         ResourceType::HTML,
-        || Ok(Response::new(StatusCode::InternalServerError, "static/500.html")),
+        || {
+            Ok(Response::new(
+                StatusCode::InternalServerError,
+                "static/500.html",
+            ))
+        },
     ));
 
     app.register_resource(Resource::new(
         RequestType::GET,
         "/maria",
         ResourceType::REDIRECT,
-        || Ok(Response::new(StatusCode::PermanentRedirect, "https://www.mariagomez.art")),
+        || {
+            Ok(Response::new(
+                StatusCode::PermanentRedirect,
+                "https://www.mariagomez.art",
+            ))
+        },
     ));
 
     app

@@ -117,8 +117,7 @@ impl App {
         let port = self.config.port;
         let listener = match TcpListener::bind(format!("{ip}:{port}")) {
             Ok(listener) => listener,
-            Err(e) => panic!("Failed to bind to {ip}:{port}: {e:?}\n")
-
+            Err(e) => panic!("Failed to bind to {ip}:{port}: {e:?}\n"),
         };
         let pool = ThreadPool::new(self.config.num_threads);
         let app = Arc::new(self);
@@ -130,7 +129,9 @@ impl App {
 
                     pool.execute(move || app_clone.handle_request(stream));
                 }
-                Err(e) => { print!("Connection Failed: {e:?}") }
+                Err(e) => {
+                    print!("Connection Failed: {e:?}")
+                }
             }
         }
     }
@@ -160,9 +161,9 @@ impl App {
                 Some(resource) => match resource.handle() {
                     Ok(response) => response,
                     Err(_) => Response::new(StatusCode::InternalServerError, ""),
-                }
+                },
                 None => Response::new(StatusCode::InternalServerError, ""),
-            }
+            },
         };
         let path = response.path;
         let status = response.status_code;
@@ -218,7 +219,7 @@ impl App {
                 }
             }
         };
-        
+
         let length = content.len();
         let response = format!("{status}\r\nContent-Length: {length}\r\n\r\n");
 
@@ -263,7 +264,7 @@ impl App {
                     print!("Failed to read request line: {e:?}\n");
                     return;
                 }
-            }
+            },
             None => {
                 print!("Empty request\n");
                 return;

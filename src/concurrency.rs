@@ -71,21 +71,23 @@ impl Worker {
     ///
     /// Todo: use std::thread::Builder and handle panics
     fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
-        let thread = thread::Builder::new().name(format!("Worker {}", id)).spawn(move || loop {
-            let message = receiver.lock().unwrap().recv();
+        let thread = thread::Builder::new()
+            .name(format!("Worker {}", id))
+            .spawn(move || loop {
+                let message = receiver.lock().unwrap().recv();
 
-            match message {
-                Ok(job) => {
-                    println!("Worker {id} got a job; executing.");
+                match message {
+                    Ok(job) => {
+                        println!("Worker {id} got a job; executing.");
 
-                    job();
+                        job();
+                    }
+                    Err(_) => {
+                        println!("Worker {id} disconnected; shutting down.");
+                        break;
+                    }
                 }
-                Err(_) => {
-                    println!("Worker {id} disconnected; shutting down.");
-                    break;
-                }
-            }
-        });
+            });
 
         let thread = match thread {
             Ok(thread) => thread,
