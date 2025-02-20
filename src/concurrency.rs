@@ -1,7 +1,6 @@
 use std::{
     sync::{mpsc, Arc, Mutex},
     thread,
-    time,
 };
 
 pub struct ThreadPool {
@@ -107,6 +106,7 @@ type Job = Box<dyn FnOnce() + Send + 'static>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time;
 
     #[test]
     #[should_panic]

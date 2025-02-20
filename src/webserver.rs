@@ -3,11 +3,12 @@ use core::fmt::{self, Display};
 use std::{
     fs,
     io::{BufRead, BufReader, Write},
-    net::{TcpListener, TcpStream},
-    sync::Arc,
+    net::{TcpListener, TcpStream, SocketAddr},
+    sync::{Arc, atomic::{AtomicBool, Ordering}},
 };
 
 #[derive(PartialEq)]
+#[derive(Debug)]
 pub enum RequestType {
     GET,
     POST,
@@ -80,16 +81,14 @@ impl Response {
 }
 
 pub struct AppConfig {
-    ip: &'static str,
-    port: u16,
+    addr: SocketAddr,
     num_threads: usize,
 }
 
 impl AppConfig {
-    pub fn new(ip: &'static str, port: u16, num_threads: usize) -> AppConfig {
+    pub fn new(addr: SocketAddr, num_threads: usize) -> AppConfig {
         AppConfig {
-            ip,
-            port,
+            addr,
             num_threads,
         }
     }
@@ -103,6 +102,8 @@ pub struct App {
 }
 
 impl App {
+    /// If the stop flag is set, the server will shut down after processing the next request.
+    /// Implemented for testing purposes.
     pub fn new(config: AppConfig) -> App {
         App {
             config,
@@ -112,12 +113,11 @@ impl App {
         }
     }
 
-    pub fn run(self) {
-        let ip = self.config.ip;
-        let port = self.config.port;
-        let listener = match TcpListener::bind(format!("{ip}:{port}")) {
+    pub fn run(self, stop_flag: Option<Arc<AtomicBool>>) {
+        let addr = self.config.addr;
+        let listener = match TcpListener::bind(self.config.addr) {
             Ok(listener) => listener,
-            Err(e) => panic!("Failed to bind to {ip}:{port}: {e:?}\n"),
+            Err(e) => panic!("Failed to bind to {addr}: {e:?}\n"),
         };
         let pool = ThreadPool::new(self.config.num_threads);
         let app = Arc::new(self);
@@ -131,6 +131,12 @@ impl App {
                 }
                 Err(e) => {
                     print!("Connection Failed: {e:?}")
+                }
+            }
+
+            if let Some(stop_flag) = &stop_flag {
+                if stop_flag.load(Ordering::SeqCst) {
+                    break;
                 }
             }
         }
@@ -295,5 +301,105 @@ impl App {
             Some(resource) => self.handle_resource(resource, &mut stream),
             None => self.handle_not_found(&mut stream),
         }
+    }
+}
+
+pub fn create_app(config: AppConfig) -> App {
+    App::new(config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        thread, 
+        time,
+        net::{SocketAddrV4, Ipv4Addr},
+        io::Read,
+    };
+
+    const TEST_ADDR: SocketAddr =  SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 7676));
+    const STARTUP_TIME: u64 = 1;
+
+    fn send_request(request_type: RequestType, path: &str) -> String{
+        let mut stream = TcpStream::connect(TEST_ADDR).unwrap();
+
+        let request = format!("{request_type:?} {path} HTTP/1.1\r\n");
+        stream.write_all(request.as_bytes()).unwrap();
+        
+        let mut buf_reader = BufReader::new(&stream);
+        let mut str = String::new();
+        buf_reader.read_to_string(&mut str).unwrap();
+        str
+    }
+
+    #[test]
+    fn app_default_404() {
+        let config = AppConfig::new(TEST_ADDR, 4);
+        let app = create_app(config);
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let stop_flag_clone = stop_flag.clone();
+        let thread = thread::spawn(move || {
+            app.run(Some(stop_flag_clone));
+        });
+        thread::sleep(time::Duration::from_secs(STARTUP_TIME)); // Give the app time to start up
+
+        stop_flag.store(true, Ordering::SeqCst);
+        let response = send_request(RequestType::GET, "/");
+        assert_eq!(response, "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 0\r\n\r\n");
+        thread.join().unwrap();
+    }
+
+    #[test]
+    fn app_custom_404() {
+        let config = AppConfig::new(TEST_ADDR, 4);
+        let mut app = create_app(config);
+        app.register_resource_404(Resource::new(
+            RequestType::GET,
+            "/404",
+            ResourceType::HTML,
+            || Ok(Response::new(StatusCode::NotFound, "static_test/404.html")),
+        ));
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let stop_flag_clone = stop_flag.clone();
+        let thread = thread::spawn(move || {
+            app.run(Some(stop_flag_clone));
+        });
+        thread::sleep(time::Duration::from_secs(STARTUP_TIME)); // Give the app time to start up
+
+        stop_flag.store(true, Ordering::SeqCst);
+        let response = send_request(RequestType::GET, "/");
+        assert_eq!(response, "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 54\r\n\r\n<!DOCTYPE html><html lang=\"en\"><body>404</body></html>");
+        thread.join().unwrap();
+    }
+
+    #[test]
+    fn app_invalid_requests() {
+        let config = AppConfig::new(TEST_ADDR, 4);
+        let app = create_app(config);
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let stop_flag_clone = stop_flag.clone();
+        let thread = thread::spawn(move || {
+            app.run(Some(stop_flag_clone));
+        });
+        thread::sleep(time::Duration::from_secs(STARTUP_TIME)); // Give the app time to start up
+
+        
+        let mut stream = TcpStream::connect(TEST_ADDR).unwrap();
+        let mut str = String::new();
+
+        stream.write_all("\n".as_bytes()).unwrap();     
+        let mut buf_reader = BufReader::new(&stream); 
+        buf_reader.read_to_string(&mut str).unwrap();
+        assert_eq!(str, "");
+
+        stop_flag.store(true, Ordering::SeqCst);
+        let mut stream = TcpStream::connect(TEST_ADDR).unwrap();
+        stream.write_all("asdfasdf\n".as_bytes()).unwrap();     
+        let mut buf_reader = BufReader::new(&stream); 
+        buf_reader.read_to_string(&mut str).unwrap();
+        assert_eq!(str, "");
+
+        thread.join().unwrap();
     }
 }
