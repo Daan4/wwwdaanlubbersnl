@@ -19,6 +19,7 @@ pub enum StatusCode {
     OK,
     NotFound,
     InternalServerError,
+    PermanentRedirect,
 }
 
 impl Display for StatusCode {
@@ -28,6 +29,7 @@ impl Display for StatusCode {
             StatusCode::OK => output = "HTTP/1.1 200 OK",
             StatusCode::NotFound => output = "HTTP/1.1 404 NOT FOUND",
             StatusCode::InternalServerError => output = "HTTP/1.1 500 INTERNAL SERVER ERROR",
+            StatusCode::PermanentRedirect => output = "HTTP/1.1 301 PERMANENT REDIRECT",
         }
         write!(f, "{}", output)
     }
@@ -36,6 +38,7 @@ impl Display for StatusCode {
 pub enum ResourceType {
     HTML,
     IMAGE,
+    REDIRECT,
 }
 
 pub struct Resource {
@@ -67,12 +70,12 @@ impl Resource {
 
 pub struct Response {
     status_code: StatusCode,
-    file: &'static str,
+    path: &'static str,
 }
 
 impl Response {
-    pub fn new(status_code: StatusCode, file: &'static str) -> Response {
-        Response { status_code, file }
+    pub fn new(status_code: StatusCode, path: &'static str) -> Response {
+        Response { status_code, path }
     }
 }
 
@@ -138,17 +141,18 @@ impl App {
 
     fn handle_resource(&self, resource: &Resource, stream: &mut TcpStream) {
         let response = resource.handle().unwrap();
-        let filename = response.file;
+        let path = response.path;
         let status = response.status_code;
 
         match resource.resource_type {
-            ResourceType::HTML => self.handle_html(filename, status, stream),
-            ResourceType::IMAGE => self.handle_image(filename, status, stream),
+            ResourceType::HTML => self.handle_html(path, status, stream),
+            ResourceType::IMAGE => self.handle_image(path, status, stream),
+            ResourceType::REDIRECT => self.handle_redirect(path, status, stream),
         }
     }
 
-    fn handle_html(&self, filename: &str, status: StatusCode, stream: &mut TcpStream) {
-        let content = fs::read_to_string(filename).unwrap();
+    fn handle_html(&self, path: &str, status: StatusCode, stream: &mut TcpStream) {
+        let content = fs::read_to_string(path).unwrap();
         let length = content.len();
         let response = format!("{status}\r\nContent-Length: {length}\r\n\r\n{content}");
 
@@ -156,14 +160,20 @@ impl App {
         stream.write_all(response.as_bytes()).unwrap();
     }
 
-    fn handle_image(&self, filename: &str, status: StatusCode, stream: &mut TcpStream) {
-        let content: &[u8] = &fs::read(filename).unwrap();
+    fn handle_image(&self, path: &str, status: StatusCode, stream: &mut TcpStream) {
+        let content: &[u8] = &fs::read(path).unwrap();
         let length = content.len();
         let response = format!("{status}\r\nContent-Length: {length}\r\n\r\n");
         print!("Response: {response}<snip>\n");
         stream
             .write_all(&[response.as_bytes(), content].concat())
             .unwrap();
+    }
+
+    fn handle_redirect(&self, path: &str, status: StatusCode, stream: &mut TcpStream) {
+        let response = format!("{status}\r\nLocation: {path}\r\nContent-Length: 0\r\n\r\n");
+        print!("Response: {response}\n");
+        stream.write_all(response.as_bytes()).unwrap();
     }
 
     fn handle_not_found(&self, stream: &mut TcpStream) {

@@ -69,7 +69,7 @@ impl Worker {
     ///
     /// The id is the id of the worker and thread is the thread that the worker is running on.
     ///
-    /// Note: use std::thread::Builder and handle panics
+    /// Todo: use std::thread::Builder and handle panics
     fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
         let thread = thread::spawn(move || loop {
             let message = receiver.lock().unwrap().recv();

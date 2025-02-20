@@ -30,5 +30,12 @@ fn create_app(config: AppConfig) -> App {
         || Ok(Response::new(StatusCode::NotFound, "static/404.html")),
     ));
 
+    app.register_resource(Resource::new(
+        RequestType::GET,
+        "/maria",
+        ResourceType::REDIRECT,
+        || Ok(Response::new(StatusCode::PermanentRedirect, "https://www.mariagomez.art")),
+    ));
+
     app
 }
