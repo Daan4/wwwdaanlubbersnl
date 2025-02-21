@@ -1,7 +1,7 @@
 use wwwdaanlubbersnl::webserver::*;
 
 fn main() {
-    let config = AppConfig::new("127.0.0.1:7676".parse().unwrap(), 4);
+    let config = AppConfig::new("127.0.0.1:7676".parse().unwrap(), 4, 5);
     let mut app = create_app(config);
 
     app.register_resource(Resource::new(

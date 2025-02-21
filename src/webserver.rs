@@ -83,13 +83,15 @@ impl Response {
 pub struct AppConfig {
     addr: SocketAddr,
     num_threads: usize,
+    read_timeout: u64,
 }
 
 impl AppConfig {
-    pub fn new(addr: SocketAddr, num_threads: usize) -> AppConfig {
+    pub fn new(addr: SocketAddr, num_threads: usize, read_timeout: u64) -> AppConfig {
         AppConfig {
             addr,
             num_threads,
+            read_timeout,
         }
     }
 }
@@ -166,11 +168,18 @@ impl App {
             Err(_) => match &self.resource_500 {
                 Some(resource) => match resource.handle() {
                     Ok(response) => response,
-                    Err(_) => Response::new(StatusCode::InternalServerError, ""),
+                    Err(_) => {
+                        self.handle_error(stream);
+                        return;
+                    },
                 },
-                None => Response::new(StatusCode::InternalServerError, ""),
+                None => {
+                    self.handle_error(stream);
+                    return;
+                },
             },
         };
+        
         let path = response.path;
         let status = response.status_code;
 
@@ -192,8 +201,8 @@ impl App {
                         return;
                     }
                     None => {
-                        status = StatusCode::NotFound;
-                        "".to_string()
+                        self.handle_not_found(stream);
+                        return;
                     }
                 }
             }
@@ -219,8 +228,8 @@ impl App {
                         return;
                     }
                     None => {
-                        status = StatusCode::NotFound;
-                        vec![]
+                        self.handle_not_found(stream);
+                        return;
                     }
                 }
             }
@@ -261,7 +270,23 @@ impl App {
         }
     }
 
+    fn handle_error(&self, stream: &mut TcpStream) {
+        let resource = &self.resource_500;
+        match resource {
+            Some(resource) => self.handle_resource(&resource, stream),
+            None => {
+                let response = format!("{}\r\nContent-Length: 0\r\n\r\n", StatusCode::InternalServerError);
+                print!("Response: {response}\n");
+                match stream.write_all(response.as_bytes()) {
+                    Err(e) => print!("Failed to write to stream: {e:?}\n"),
+                    _ => {}
+                }
+            }
+        }
+    }
+
     fn handle_request(&self, mut stream: TcpStream) {
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(self.config.read_timeout))).unwrap();
         let buf_reader = BufReader::new(&stream);
         let request_line = match buf_reader.lines().next() {
             Some(line) => match line {
@@ -282,7 +307,7 @@ impl App {
         let parts = request_line.split_whitespace().collect::<Vec<&str>>();
 
         if parts.len() < 2 {
-            // Handle error case when request line is malformed
+            print!("Malformed request\n");
             return;
         }
 
@@ -291,7 +316,10 @@ impl App {
             "POST" => RequestType::POST,
             "PUT" => RequestType::PUT,
             "DELETE" => RequestType::DELETE,
-            _ => RequestType::GET, // todo unsupported request
+            _ => {
+                print!("Unsupported request\n");
+                return;
+            }
         };
 
         let path = parts[1];
@@ -319,7 +347,7 @@ mod tests {
     };
 
     const TEST_ADDR: SocketAddr =  SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 7676));
-    const STARTUP_TIME: u64 = 1;
+    const STARTUP_TIME: u64 = 100;
 
     fn send_request(request_type: RequestType, path: &str) -> String{
         let mut stream = TcpStream::connect(TEST_ADDR).unwrap();
@@ -334,25 +362,34 @@ mod tests {
     }
 
     #[test]
-    fn app_default_404() {
-        let config = AppConfig::new(TEST_ADDR, 4);
+    fn app_request_404() {
+        // Default 400 handler
+        let config = AppConfig::new(TEST_ADDR, 4, 5);
         let app = create_app(config);
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_flag_clone = stop_flag.clone();
         let thread = thread::spawn(move || {
             app.run(Some(stop_flag_clone));
         });
-        thread::sleep(time::Duration::from_secs(STARTUP_TIME)); // Give the app time to start up
+        thread::sleep(time::Duration::from_millis(STARTUP_TIME)); // Give the app time to start up
 
-        stop_flag.store(true, Ordering::SeqCst);
         let response = send_request(RequestType::GET, "/");
         assert_eq!(response, "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 0\r\n\r\n");
-        thread.join().unwrap();
-    }
 
-    #[test]
-    fn app_custom_404() {
-        let config = AppConfig::new(TEST_ADDR, 4);
+        let response = send_request(RequestType::POST, "/nonexistent");
+        assert_eq!(response, "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 0\r\n\r\n");
+
+        let response = send_request(RequestType::PUT, "/im/not/real");
+        assert_eq!(response, "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 0\r\n\r\n");
+
+        stop_flag.store(true, Ordering::SeqCst);
+        let response = send_request(RequestType::DELETE, "deletemeplease");
+        assert_eq!(response, "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 0\r\n\r\n");
+
+        thread.join().unwrap();
+
+        // Custom 404 handler
+        let config = AppConfig::new(TEST_ADDR, 4, 5);
         let mut app = create_app(config);
         app.register_resource_404(Resource::new(
             RequestType::GET,
@@ -365,40 +402,248 @@ mod tests {
         let thread = thread::spawn(move || {
             app.run(Some(stop_flag_clone));
         });
-        thread::sleep(time::Duration::from_secs(STARTUP_TIME)); // Give the app time to start up
+        thread::sleep(time::Duration::from_millis(STARTUP_TIME)); // Give the app time to start up
 
-        stop_flag.store(true, Ordering::SeqCst);
         let response = send_request(RequestType::GET, "/");
         assert_eq!(response, "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 54\r\n\r\n<!DOCTYPE html><html lang=\"en\"><body>404</body></html>");
+
+        let response = send_request(RequestType::POST, "/nonexistent");
+        assert_eq!(response, "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 54\r\n\r\n<!DOCTYPE html><html lang=\"en\"><body>404</body></html>");
+
+        let response = send_request(RequestType::PUT, "/im/not/real");
+        assert_eq!(response, "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 54\r\n\r\n<!DOCTYPE html><html lang=\"en\"><body>404</body></html>");
+
+        stop_flag.store(true, Ordering::SeqCst);
+        let response = send_request(RequestType::DELETE, "deletemeplease");
+        assert_eq!(response, "HTTP/1.1 404 NOT FOUND\r\nContent-Length: 54\r\n\r\n<!DOCTYPE html><html lang=\"en\"><body>404</body></html>");
+
         thread.join().unwrap();
     }
 
     #[test]
-    fn app_invalid_requests() {
-        let config = AppConfig::new(TEST_ADDR, 4);
+    fn app_request_invalid() {
+        let config = AppConfig::new(TEST_ADDR, 4, 1);
         let app = create_app(config);
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_flag_clone = stop_flag.clone();
         let thread = thread::spawn(move || {
             app.run(Some(stop_flag_clone));
         });
-        thread::sleep(time::Duration::from_secs(STARTUP_TIME)); // Give the app time to start up
-
+        thread::sleep(time::Duration::from_millis(STARTUP_TIME)); // Give the app time to start up
         
         let mut stream = TcpStream::connect(TEST_ADDR).unwrap();
         let mut str = String::new();
 
+        stream.write_all("".as_bytes()).unwrap();     
+        let mut buf_reader = BufReader::new(&stream); 
+        buf_reader.read_to_string(&mut str).unwrap();
+        assert_eq!(str, "");
+
+        let mut stream = TcpStream::connect(TEST_ADDR).unwrap();
         stream.write_all("\n".as_bytes()).unwrap();     
         let mut buf_reader = BufReader::new(&stream); 
         buf_reader.read_to_string(&mut str).unwrap();
         assert_eq!(str, "");
 
-        stop_flag.store(true, Ordering::SeqCst);
         let mut stream = TcpStream::connect(TEST_ADDR).unwrap();
-        stream.write_all("asdfasdf\n".as_bytes()).unwrap();     
+        stream.write_all("request\n".as_bytes()).unwrap();     
         let mut buf_reader = BufReader::new(&stream); 
         buf_reader.read_to_string(&mut str).unwrap();
         assert_eq!(str, "");
+
+        let mut stream = TcpStream::connect(TEST_ADDR).unwrap();
+        stream.write_all("some text here\n".as_bytes()).unwrap();     
+        let mut buf_reader = BufReader::new(&stream); 
+        buf_reader.read_to_string(&mut str).unwrap();
+        assert_eq!(str, "");
+
+        let mut stream = TcpStream::connect(TEST_ADDR).unwrap();
+        stream.write_all(format!("FOO / HTTP/1.1\r\n").as_bytes()).unwrap();     
+        let mut buf_reader = BufReader::new(&stream); 
+        buf_reader.read_to_string(&mut str).unwrap();
+        assert_eq!(str, "");
+
+        let mut stream = TcpStream::connect(TEST_ADDR).unwrap();
+        stream.write_all(format!("GET / HTTP/1.1").as_bytes()).unwrap();     
+        let mut buf_reader = BufReader::new(&stream); 
+        buf_reader.read_to_string(&mut str).unwrap();
+        assert_eq!(str, "");
+
+        stop_flag.store(true, Ordering::SeqCst);
+        let stream = TcpStream::connect(TEST_ADDR).unwrap();
+        drop(stream); 
+
+        thread.join().unwrap();
+    }
+
+    #[test]
+    fn app_request_500() {
+        // Default 500 handler
+        let config = AppConfig::new(TEST_ADDR, 4, 5);
+        let mut app = create_app(config);
+        app.register_resource(Resource::new(
+            RequestType::GET,
+            "/",
+            ResourceType::HTML,
+            || Err("Failed".to_string()),
+        ));
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let stop_flag_clone = stop_flag.clone();
+        let thread = thread::spawn(move || {
+            app.run(Some(stop_flag_clone));
+        });
+        thread::sleep(time::Duration::from_millis(STARTUP_TIME)); // Give the app time to start up
+
+        stop_flag.store(true, Ordering::SeqCst);
+        let response = send_request(RequestType::GET, "/");
+        assert_eq!(response, "HTTP/1.1 500 INTERNAL SERVER ERROR\r\nContent-Length: 0\r\n\r\n");
+
+        thread.join().unwrap();
+
+        // Custom 500 handler
+        let config = AppConfig::new(TEST_ADDR, 4, 5);
+        let mut app = create_app(config);
+        app.register_resource(Resource::new(
+            RequestType::GET,
+            "/",
+            ResourceType::HTML,
+            || Err("Failed".to_string()),
+        ));
+        app.register_resource_500(Resource::new(
+            RequestType::GET,
+            "/500",
+            ResourceType::HTML,
+            || {
+                Ok(Response::new(
+                    StatusCode::InternalServerError,
+                    "static_test/500.html",
+                ))
+            },
+        ));
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let stop_flag_clone = stop_flag.clone();
+        let thread = thread::spawn(move || {
+            app.run(Some(stop_flag_clone));
+        });
+        thread::sleep(time::Duration::from_millis(STARTUP_TIME)); // Give the app time to start up
+
+        stop_flag.store(true, Ordering::SeqCst);
+        let response = send_request(RequestType::GET, "/");
+        assert_eq!(response, "HTTP/1.1 500 INTERNAL SERVER ERROR\r\nContent-Length: 54\r\n\r\n<!DOCTYPE html><html lang=\"en\"><body>500</body></html>");
+
+        thread.join().unwrap();
+    }
+
+    #[test]
+    fn app_request() {
+        let config = AppConfig::new(TEST_ADDR, 4, 5);
+        let mut app = create_app(config);
+        app.register_resource(Resource::new(
+            RequestType::GET,
+            "/html",
+            ResourceType::HTML,
+            || Ok(Response::new(StatusCode::OK, "static_test/test.html")),
+        ));
+        app.register_resource(Resource::new(
+            RequestType::POST,
+            "/html",
+            ResourceType::HTML,
+            || Ok(Response::new(StatusCode::OK, "static_test/test.html")),
+        ));
+        app.register_resource(Resource::new(
+            RequestType::PUT,
+            "/html",
+            ResourceType::HTML,
+            || Ok(Response::new(StatusCode::OK, "static_test/test.html")),
+        ));
+        app.register_resource(Resource::new(
+            RequestType::DELETE,
+            "/html",
+            ResourceType::HTML,
+            || Ok(Response::new(StatusCode::OK, "static_test/test.html")),
+        ));
+        app.register_resource(Resource::new(
+            RequestType::GET,
+            "/image",
+            ResourceType::IMAGE,
+            || Ok(Response::new(StatusCode::OK, "static_test/test.jpg")),
+        ));
+        app.register_resource(Resource::new(
+            RequestType::POST,
+            "/image",
+            ResourceType::IMAGE,
+            || Ok(Response::new(StatusCode::OK, "static_test/test.jpg")),
+        ));
+        app.register_resource(Resource::new(
+            RequestType::PUT,
+            "/image",
+            ResourceType::IMAGE,
+            || Ok(Response::new(StatusCode::OK, "static_test/test.jpg")),
+        ));
+        app.register_resource(Resource::new(
+            RequestType::DELETE,
+            "/image",
+            ResourceType::IMAGE,
+            || Ok(Response::new(StatusCode::OK, "static_test/test.jpg")),
+        ));
+        app.register_resource(Resource::new(
+            RequestType::GET,
+            "/redirect",
+            ResourceType::REDIRECT,
+            || Ok(Response::new(StatusCode::OK, "static_test/redirect.html")),
+        ));
+        app.register_resource(Resource::new(
+            RequestType::POST,
+            "/redirect",
+            ResourceType::REDIRECT,
+            || Ok(Response::new(StatusCode::OK, "static_test/redirect.html")),
+        ));
+        app.register_resource(Resource::new(
+            RequestType::PUT,
+            "/redirect",
+            ResourceType::REDIRECT,
+            || Ok(Response::new(StatusCode::OK, "static_test/redirect.html")),
+        ));
+        app.register_resource(Resource::new(
+            RequestType::DELETE,
+            "/redirect",
+            ResourceType::REDIRECT,
+            || Ok(Response::new(StatusCode::OK, "static_test/redirect.html")),
+        ));
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let stop_flag_clone = stop_flag.clone();
+        let thread = thread::spawn(move || {
+            app.run(Some(stop_flag_clone));
+        });
+        thread::sleep(time::Duration::from_millis(STARTUP_TIME)); // Give the app time to start up
+
+        let response = send_request(RequestType::GET, "/html");
+        assert_eq!(response, "HTTP/1.1 200 OK\r\nContent-Length: 55\r\n\r\n<!DOCTYPE html><html lang=\"en\"><body>test</body></html>");
+        let response = send_request(RequestType::POST, "/html");
+        assert_eq!(response, "HTTP/1.1 200 OK\r\nContent-Length: 55\r\n\r\n<!DOCTYPE html><html lang=\"en\"><body>test</body></html>");
+        let response = send_request(RequestType::PUT, "/html");
+        assert_eq!(response, "HTTP/1.1 200 OK\r\nContent-Length: 55\r\n\r\n<!DOCTYPE html><html lang=\"en\"><body>test</body></html>");
+        let response = send_request(RequestType::DELETE, "/html");
+        assert_eq!(response, "HTTP/1.1 200 OK\r\nContent-Length: 55\r\n\r\n<!DOCTYPE html><html lang=\"en\"><body>test</body></html>");
+
+        let response = send_request(RequestType::GET, "/image");
+        assert_eq!(response, "HTTP/1.1 200 OK\r\nContent-Length: 12\r\n\r\n\\x01\\x02\\x03");
+        let response = send_request(RequestType::POST, "/image");
+        assert_eq!(response, "HTTP/1.1 200 OK\r\nContent-Length: 12\r\n\r\n\\x01\\x02\\x03");
+        let response = send_request(RequestType::PUT, "/image");
+        assert_eq!(response, "HTTP/1.1 200 OK\r\nContent-Length: 12\r\n\r\n\\x01\\x02\\x03");
+        let response = send_request(RequestType::DELETE, "/image");
+        assert_eq!(response, "HTTP/1.1 200 OK\r\nContent-Length: 12\r\n\r\n\\x01\\x02\\x03");
+
+        let response = send_request(RequestType::GET, "/redirect");
+        assert_eq!(response, "HTTP/1.1 200 OK\r\nLocation: static_test/redirect.html\r\nContent-Length: 0\r\n\r\n");
+        let response = send_request(RequestType::POST, "/redirect");
+        assert_eq!(response, "HTTP/1.1 200 OK\r\nLocation: static_test/redirect.html\r\nContent-Length: 0\r\n\r\n");
+        let response = send_request(RequestType::PUT, "/redirect");
+        assert_eq!(response, "HTTP/1.1 200 OK\r\nLocation: static_test/redirect.html\r\nContent-Length: 0\r\n\r\n");
+        stop_flag.store(true, Ordering::SeqCst);
+        let response = send_request(RequestType::DELETE, "/redirect");
+        assert_eq!(response, "HTTP/1.1 200 OK\r\nLocation: static_test/redirect.html\r\nContent-Length: 0\r\n\r\n");
 
         thread.join().unwrap();
     }
