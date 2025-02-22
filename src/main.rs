@@ -1,13 +1,13 @@
 use wwwdaanlubbersnl::webserver::*;
+use std::env;
 
 fn main() {
-    let config = AppConfig::new("127.0.0.1:7676".parse().unwrap(), 4, 5);
+    let config = AppConfig::new(format!("0.0.0.0:{}", env::var("PORT").unwrap()).parse().unwrap(), 4, 5);
     let mut app = create_app(config);
     register_resources(&mut app);
     app.run(None);
 }
 
-// todo register resources from old website. Maybe make a function to auto register a folder of resources for get request?
 fn register_resources(app: &mut App) {
     app.register_resource(Resource::new(
         RequestType::GET,
