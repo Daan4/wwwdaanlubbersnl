@@ -1,0 +1,5 @@
+Using Heroku buildpack for Rust: https://elements.heroku.com/buildpacks/emk/heroku-buildpack-rust
+
+heroku git:remote -a daanlubbers-rust
+heroku buildpacks:set emk/rust
+git push heroku HEAD:main
