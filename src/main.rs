@@ -1,8 +1,14 @@
-use wwwdaanlubbersnl::webserver::*;
 use std::env;
+use wwwdaanlubbersnl::webserver::*;
 
 fn main() {
-    let config = AppConfig::new(format!("0.0.0.0:{}", env::var("PORT").unwrap()).parse().unwrap(), 4, 5);
+    let config = AppConfig::new(
+        format!("0.0.0.0:{}", env::var("PORT").unwrap())
+            .parse()
+            .unwrap(),
+        4,
+        5,
+    );
     let mut app = create_app(config);
     register_resources(&mut app);
     app.run(None);
@@ -58,84 +64,48 @@ fn register_resources(app: &mut App) {
         RequestType::GET,
         "/static/bootstrap.css",
         ResourceType::HTML,
-        || {
-            Ok(Response::new(
-                StatusCode::OK,
-                "static/bootstrap.css",
-            ))
-        },
+        || Ok(Response::new(StatusCode::OK, "static/bootstrap.css")),
     ));
 
     app.register_resource(Resource::new(
         RequestType::GET,
         "/static/github_logo.png",
         ResourceType::IMAGE,
-        || {
-            Ok(Response::new(
-                StatusCode::OK,
-                "static/github_logo.png",
-            ))
-        },
+        || Ok(Response::new(StatusCode::OK, "static/github_logo.png")),
     ));
 
     app.register_resource(Resource::new(
         RequestType::GET,
         "/static/lichess_logo.webp",
         ResourceType::IMAGE,
-        || {
-            Ok(Response::new(
-                StatusCode::OK,
-                "static/lichess_logo.webp",
-            ))
-        },
+        || Ok(Response::new(StatusCode::OK, "static/lichess_logo.webp")),
     ));
 
     app.register_resource(Resource::new(
         RequestType::GET,
         "/static/linkedin_logo.png",
         ResourceType::IMAGE,
-        || {
-            Ok(Response::new(
-                StatusCode::OK,
-                "static/linkedin_logo.png",
-            ))
-        },
-    ));    
+        || Ok(Response::new(StatusCode::OK, "static/linkedin_logo.png")),
+    ));
 
     app.register_resource(Resource::new(
         RequestType::GET,
         "/static/medium_logo.webp",
         ResourceType::IMAGE,
-        || {
-            Ok(Response::new(
-                StatusCode::OK,
-                "static/medium_logo.webp",
-            ))
-        },
-    ));    
+        || Ok(Response::new(StatusCode::OK, "static/medium_logo.webp")),
+    ));
 
     app.register_resource(Resource::new(
         RequestType::GET,
         "/static/nano_logo.png",
         ResourceType::IMAGE,
-        || {
-            Ok(Response::new(
-                StatusCode::OK,
-                "static/nano_logo.png",
-            ))
-        },
-    ));  
+        || Ok(Response::new(StatusCode::OK, "static/nano_logo.png")),
+    ));
 
     app.register_resource(Resource::new(
         RequestType::GET,
         "/static/maria_logo.png",
         ResourceType::IMAGE,
-        || {
-            Ok(Response::new(
-                StatusCode::OK,
-                "static/maria_logo.png",
-            ))
-        },
-    ));  
-    
+        || Ok(Response::new(StatusCode::OK, "static/maria_logo.png")),
+    ));
 }

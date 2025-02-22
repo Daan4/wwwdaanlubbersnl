@@ -116,11 +116,11 @@ mod tests {
 
     #[test]
     fn threadpool_new() {
-        let pool = ThreadPool::new(1);        
+        let pool = ThreadPool::new(1);
         assert_eq!(pool.workers.len(), 1);
-        let pool = ThreadPool::new(4);        
+        let pool = ThreadPool::new(4);
         assert_eq!(pool.workers.len(), 4);
-        let pool = ThreadPool::new(32);        
+        let pool = ThreadPool::new(32);
         assert_eq!(pool.workers.len(), 32);
     }
 
