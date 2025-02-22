@@ -1,4 +1,8 @@
-use std::env;
+use std::{
+    env,
+    fs,
+    path::Path,
+};
 use wwwdaanlubbersnl::webserver::*;
 
 fn main() {
@@ -15,97 +19,42 @@ fn main() {
 }
 
 fn register_resources(app: &mut App) {
-    app.register_resource(Resource::new(
-        RequestType::GET,
-        "/",
-        ResourceType::HTML,
-        || Ok(Response::new(StatusCode::OK, "static/index.html")),
-    ));
+    register_all_resources_in_folder_for_get(app, "/", "static/html");
+    register_all_resources_in_folder_for_get(app, "/", "static/css");
+    register_all_resources_in_folder_for_get(app, "/", "static/images");
 
     app.register_resource(Resource::new(
         RequestType::GET,
-        "/favicon.ico",
-        ResourceType::IMAGE,
-        || Ok(Response::new(StatusCode::OK, "static/icon.ico")),
-    ));
-
-    app.register_resource_404(Resource::new(
-        RequestType::GET,
-        "/404",
-        ResourceType::HTML,
-        || Ok(Response::new(StatusCode::NotFound, "static/404.html")),
-    ));
-
-    app.register_resource_500(Resource::new(
-        RequestType::GET,
-        "/500",
-        ResourceType::HTML,
-        || {
-            Ok(Response::new(
-                StatusCode::InternalServerError,
-                "static/500.html",
-            ))
-        },
-    ));
-
-    app.register_resource(Resource::new(
-        RequestType::GET,
-        "/maria",
+        "/maria".to_string(),
         ResourceType::REDIRECT,
         || {
             Ok(Response::new(
                 StatusCode::PermanentRedirect,
-                "https://www.mariagomez.art",
+                "https://www.mariagomez.art".to_string(),
             ))
         },
     ));
+}
 
-    app.register_resource(Resource::new(
-        RequestType::GET,
-        "/static/bootstrap.css",
-        ResourceType::HTML,
-        || Ok(Response::new(StatusCode::OK, "static/bootstrap.css")),
-    ));
+fn register_all_resources_in_folder_for_get(app: &mut App, base_path: &str, folder: &str) {
+    let files: fs::ReadDir = fs::read_dir(folder).unwrap();
+    for file in files {
+        let file = file.unwrap();
+        let file_name = file.file_name().into_string().unwrap();
+        let file_ext = Path::new(file_name.as_str()).extension().unwrap().to_str().unwrap();
+        let resource_type = match file_ext {
+            "html" => ResourceType::TEXT,
+            "css" => ResourceType::TEXT,
+            "js" => ResourceType::TEXT,
+            _ => ResourceType::BINARY,
+        };
 
-    app.register_resource(Resource::new(
-        RequestType::GET,
-        "/static/github_logo.png",
-        ResourceType::IMAGE,
-        || Ok(Response::new(StatusCode::OK, "static/github_logo.png")),
-    ));
-
-    app.register_resource(Resource::new(
-        RequestType::GET,
-        "/static/lichess_logo.webp",
-        ResourceType::IMAGE,
-        || Ok(Response::new(StatusCode::OK, "static/lichess_logo.webp")),
-    ));
-
-    app.register_resource(Resource::new(
-        RequestType::GET,
-        "/static/linkedin_logo.png",
-        ResourceType::IMAGE,
-        || Ok(Response::new(StatusCode::OK, "static/linkedin_logo.png")),
-    ));
-
-    app.register_resource(Resource::new(
-        RequestType::GET,
-        "/static/medium_logo.webp",
-        ResourceType::IMAGE,
-        || Ok(Response::new(StatusCode::OK, "static/medium_logo.webp")),
-    ));
-
-    app.register_resource(Resource::new(
-        RequestType::GET,
-        "/static/nano_logo.png",
-        ResourceType::IMAGE,
-        || Ok(Response::new(StatusCode::OK, "static/nano_logo.png")),
-    ));
-
-    app.register_resource(Resource::new(
-        RequestType::GET,
-        "/static/maria_logo.png",
-        ResourceType::IMAGE,
-        || Ok(Response::new(StatusCode::OK, "static/maria_logo.png")),
-    ));
+        let resource = Resource::new(
+            RequestType::GET,
+            format!("{}/{}", base_path, file_name),
+            resource_type,
+            move || Ok(Response::new(StatusCode::OK, format!("{}/{}", base_path, file_name))),
+        );
+        app.register_resource(resource);
+    }
 }

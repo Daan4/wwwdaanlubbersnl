@@ -39,26 +39,28 @@ impl Display for StatusCode {
 }
 
 pub enum ResourceType {
-    HTML,
-    IMAGE,
+    TEXT,
+    BINARY,
     REDIRECT,
 }
 
-pub struct Resource {
+pub struct Resource
+{
     request_type: RequestType,
-    path: &'static str,
+    path: String,
     resource_type: ResourceType,
     handler: fn() -> Result<Response, String>,
 }
 
-impl Resource {
+impl Resource
+{
     pub fn new(
         request_type: RequestType,
-        path: &'static str,
+        path: String,
         resource_type: ResourceType,
         handler: fn() -> Result<Response, String>,
-    ) -> Resource {
-        Resource {
+    ) -> Self {
+        Self {
             request_type,
             path,
             resource_type,
@@ -73,12 +75,12 @@ impl Resource {
 
 pub struct Response {
     status_code: StatusCode,
-    path: &'static str,
+    path: String,
 }
 
 impl Response {
-    pub fn new(status_code: StatusCode, path: &'static str) -> Response {
-        Response { status_code, path }
+    pub fn new(status_code: StatusCode, path: String) -> Self {
+        Self { status_code, path }
     }
 }
 
@@ -89,8 +91,8 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    pub fn new(addr: SocketAddr, num_threads: usize, read_timeout: u64) -> AppConfig {
-        AppConfig {
+    pub fn new(addr: SocketAddr, num_threads: usize, read_timeout: u64) -> Self {
+        Self {
             addr,
             num_threads,
             read_timeout,
@@ -108,8 +110,8 @@ pub struct App {
 impl App {
     /// If the stop flag is set, the server will shut down after processing the next request.
     /// Implemented for testing purposes.
-    pub fn new(config: AppConfig) -> App {
-        App {
+    pub fn new(config: AppConfig) -> Self {
+        Self {
             config,
             resources: vec![],
             resource_404: None,
@@ -156,138 +158,6 @@ impl App {
 
     pub fn register_resource_500(&mut self, resource: Resource) {
         self.resource_500 = Some(resource);
-    }
-
-    fn get_resource(&self, request_type: RequestType, path: &str) -> Option<&Resource> {
-        self.resources
-            .iter()
-            .find(|resource| resource.request_type == request_type && resource.path == path)
-    }
-
-    fn handle_resource(&self, resource: &Resource, stream: &mut TcpStream) {
-        let response = match resource.handle() {
-            Ok(response) => response,
-            Err(_) => match &self.resource_500 {
-                Some(resource) => match resource.handle() {
-                    Ok(response) => response,
-                    Err(_) => {
-                        self.handle_error(stream);
-                        return;
-                    }
-                },
-                None => {
-                    self.handle_error(stream);
-                    return;
-                }
-            },
-        };
-
-        let path = response.path;
-        let status = response.status_code;
-
-        match resource.resource_type {
-            ResourceType::HTML => self.handle_html(path, status, stream),
-            ResourceType::IMAGE => self.handle_image(path, status, stream),
-            ResourceType::REDIRECT => self.handle_redirect(path, status, stream),
-        }
-    }
-
-    fn handle_html(&self, path: &str, status: StatusCode, stream: &mut TcpStream) {
-        let content = match fs::read_to_string(path) {
-            Ok(content) => content,
-            Err(_) => {
-                let resource = &self.resource_404;
-                match resource {
-                    Some(resource) => {
-                        self.handle_resource(&resource, stream);
-                        return;
-                    }
-                    None => {
-                        self.handle_not_found(stream);
-                        return;
-                    }
-                }
-            }
-        };
-        let length = content.len();
-        let response = format!("{status}\r\nContent-Length: {length}\r\n\r\n{content}");
-
-        print!("Response: {response}\n");
-        match stream.write_all(response.as_bytes()) {
-            Err(e) => print!("Failed to write to stream: {e:?}\n"),
-            _ => {}
-        }
-    }
-
-    fn handle_image(&self, path: &str, status: StatusCode, stream: &mut TcpStream) {
-        let content = match fs::read(path) {
-            Ok(content) => content,
-            Err(_) => {
-                let resource = &self.resource_404;
-                match resource {
-                    Some(resource) => {
-                        self.handle_resource(&resource, stream);
-                        return;
-                    }
-                    None => {
-                        self.handle_not_found(stream);
-                        return;
-                    }
-                }
-            }
-        };
-
-        let length = content.len();
-        let response = format!("{status}\r\nContent-Length: {length}\r\n\r\n");
-
-        print!("Response: {response}<snip>\n");
-        match stream.write_all(&[response.as_bytes(), &content].concat()) {
-            Err(e) => print!("Failed to write to stream: {e:?}\n"),
-            _ => {}
-        }
-    }
-
-    fn handle_redirect(&self, path: &str, status: StatusCode, stream: &mut TcpStream) {
-        let response = format!("{status}\r\nLocation: {path}\r\nContent-Length: 0\r\n\r\n");
-
-        print!("Response: {response}\n");
-        match stream.write_all(response.as_bytes()) {
-            Err(e) => print!("Failed to write to stream: {e:?}\n"),
-            _ => {}
-        }
-    }
-
-    fn handle_not_found(&self, stream: &mut TcpStream) {
-        let resource = &self.resource_404;
-        match resource {
-            Some(resource) => self.handle_resource(&resource, stream),
-            None => {
-                let response = format!("{}\r\nContent-Length: 0\r\n\r\n", StatusCode::NotFound);
-                print!("Response: {response}\n");
-                match stream.write_all(response.as_bytes()) {
-                    Err(e) => print!("Failed to write to stream: {e:?}\n"),
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    fn handle_error(&self, stream: &mut TcpStream) {
-        let resource = &self.resource_500;
-        match resource {
-            Some(resource) => self.handle_resource(&resource, stream),
-            None => {
-                let response = format!(
-                    "{}\r\nContent-Length: 0\r\n\r\n",
-                    StatusCode::InternalServerError
-                );
-                print!("Response: {response}\n");
-                match stream.write_all(response.as_bytes()) {
-                    Err(e) => print!("Failed to write to stream: {e:?}\n"),
-                    _ => {}
-                }
-            }
-        }
     }
 
     fn handle_request(&self, mut stream: TcpStream) {
@@ -337,6 +207,138 @@ impl App {
         match resource {
             Some(resource) => self.handle_resource(resource, &mut stream),
             None => self.handle_not_found(&mut stream),
+        }
+    }
+
+    fn get_resource(&self, request_type: RequestType, path: &str) -> Option<&Resource> {
+        self.resources
+            .iter()
+            .find(|resource| resource.request_type == request_type && resource.path == path)
+    }
+
+    fn handle_resource(&self, resource: &Resource, stream: &mut TcpStream) {
+        let response = match resource.handle() {
+            Ok(response) => response,
+            Err(_) => match &self.resource_500 {
+                Some(resource) => match resource.handle() {
+                    Ok(response) => response,
+                    Err(_) => {
+                        self.handle_error(stream);
+                        return;
+                    }
+                },
+                None => {
+                    self.handle_error(stream);
+                    return;
+                }
+            },
+        };
+
+        let path = response.path;
+        let status = response.status_code;
+
+        match resource.resource_type {
+            ResourceType::TEXT => self.handle_text(path, status, stream),
+            ResourceType::BINARY => self.handle_binary(path, status, stream),
+            ResourceType::REDIRECT => self.handle_redirect(path, status, stream),
+        }
+    }
+
+    fn handle_text(&self, path: String, status: StatusCode, stream: &mut TcpStream) {
+        let content = match fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(_) => {
+                let resource = &self.resource_404;
+                match resource {
+                    Some(resource) => {
+                        self.handle_resource(&resource, stream);
+                        return;
+                    }
+                    None => {
+                        self.handle_not_found(stream);
+                        return;
+                    }
+                }
+            }
+        };
+        let length = content.len();
+        let response = format!("{status}\r\nContent-Length: {length}\r\n\r\n{content}");
+
+        print!("Response: {response}\n");
+        match stream.write_all(response.as_bytes()) {
+            Err(e) => print!("Failed to write to stream: {e:?}\n"),
+            _ => {}
+        }
+    }
+
+    fn handle_binary(&self, path: String, status: StatusCode, stream: &mut TcpStream) {
+        let content = match fs::read(path) {
+            Ok(content) => content,
+            Err(_) => {
+                let resource = &self.resource_404;
+                match resource {
+                    Some(resource) => {
+                        self.handle_resource(&resource, stream);
+                        return;
+                    }
+                    None => {
+                        self.handle_not_found(stream);
+                        return;
+                    }
+                }
+            }
+        };
+
+        let length = content.len();
+        let response = format!("{status}\r\nContent-Length: {length}\r\n\r\n");
+
+        print!("Response: {response}<snip>\n");
+        match stream.write_all(&[response.as_bytes(), &content].concat()) {
+            Err(e) => print!("Failed to write to stream: {e:?}\n"),
+            _ => {}
+        }
+    }
+
+    fn handle_redirect(&self, path: String, status: StatusCode, stream: &mut TcpStream) {
+        let response = format!("{status}\r\nLocation: {path}\r\nContent-Length: 0\r\n\r\n");
+
+        print!("Response: {response}\n");
+        match stream.write_all(response.as_bytes()) {
+            Err(e) => print!("Failed to write to stream: {e:?}\n"),
+            _ => {}
+        }
+    }
+
+    fn handle_not_found(&self, stream: &mut TcpStream) {
+        let resource = &self.resource_404;
+        match resource {
+            Some(resource) => self.handle_resource(&resource, stream),
+            None => {
+                let response = format!("{}\r\nContent-Length: 0\r\n\r\n", StatusCode::NotFound);
+                print!("Response: {response}\n");
+                match stream.write_all(response.as_bytes()) {
+                    Err(e) => print!("Failed to write to stream: {e:?}\n"),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    fn handle_error(&self, stream: &mut TcpStream) {
+        let resource = &self.resource_500;
+        match resource {
+            Some(resource) => self.handle_resource(&resource, stream),
+            None => {
+                let response = format!(
+                    "{}\r\nContent-Length: 0\r\n\r\n",
+                    StatusCode::InternalServerError
+                );
+                print!("Response: {response}\n");
+                match stream.write_all(response.as_bytes()) {
+                    Err(e) => print!("Failed to write to stream: {e:?}\n"),
+                    _ => {}
+                }
+            }
         }
     }
 }
@@ -414,9 +416,9 @@ mod tests {
         let mut app = create_app(config);
         app.register_resource_404(Resource::new(
             RequestType::GET,
-            "/404",
-            ResourceType::HTML,
-            || Ok(Response::new(StatusCode::NotFound, "static_test/404.html")),
+            "/404".to_string(),
+            ResourceType::TEXT,
+            || Ok(Response::new(StatusCode::NotFound, "static_test/404.html".to_string())),
         ));
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_flag_clone = stop_flag.clone();
@@ -508,8 +510,8 @@ mod tests {
         let mut app = create_app(config);
         app.register_resource(Resource::new(
             RequestType::GET,
-            "/",
-            ResourceType::HTML,
+            "/".to_string(),
+            ResourceType::TEXT,
             || Err("Failed".to_string()),
         ));
         let stop_flag = Arc::new(AtomicBool::new(false));
@@ -533,18 +535,18 @@ mod tests {
         let mut app = create_app(config);
         app.register_resource(Resource::new(
             RequestType::GET,
-            "/",
-            ResourceType::HTML,
+            "/".to_string(),
+            ResourceType::TEXT,
             || Err("Failed".to_string()),
         ));
         app.register_resource_500(Resource::new(
             RequestType::GET,
-            "/500",
-            ResourceType::HTML,
+            "/500".to_string(),
+            ResourceType::TEXT,
             || {
                 Ok(Response::new(
                     StatusCode::InternalServerError,
-                    "static_test/500.html",
+                    "static_test/500.html".to_string(),
                 ))
             },
         ));
@@ -568,75 +570,75 @@ mod tests {
         let mut app = create_app(config);
         app.register_resource(Resource::new(
             RequestType::GET,
-            "/html",
-            ResourceType::HTML,
-            || Ok(Response::new(StatusCode::OK, "static_test/test.html")),
+            "/html".to_string(),
+            ResourceType::TEXT,
+            || Ok(Response::new(StatusCode::OK, "static_test/test.html".to_string())),
         ));
         app.register_resource(Resource::new(
             RequestType::POST,
-            "/html",
-            ResourceType::HTML,
-            || Ok(Response::new(StatusCode::OK, "static_test/test.html")),
+            "/html".to_string(),
+            ResourceType::TEXT,
+            || Ok(Response::new(StatusCode::OK, "static_test/test.html".to_string())),
         ));
         app.register_resource(Resource::new(
             RequestType::PUT,
-            "/html",
-            ResourceType::HTML,
-            || Ok(Response::new(StatusCode::OK, "static_test/test.html")),
+            "/html".to_string(),
+            ResourceType::TEXT,
+            || Ok(Response::new(StatusCode::OK, "static_test/test.html".to_string())),
         ));
         app.register_resource(Resource::new(
             RequestType::DELETE,
-            "/html",
-            ResourceType::HTML,
-            || Ok(Response::new(StatusCode::OK, "static_test/test.html")),
+            "/html".to_string(),
+            ResourceType::TEXT,
+            || Ok(Response::new(StatusCode::OK, "static_test/test.html".to_string())),
         ));
         app.register_resource(Resource::new(
             RequestType::GET,
-            "/image",
-            ResourceType::IMAGE,
-            || Ok(Response::new(StatusCode::OK, "static_test/test.jpg")),
+            "/image".to_string(),
+            ResourceType::BINARY,
+            || Ok(Response::new(StatusCode::OK, "static_test/test.jpg".to_string())),
         ));
         app.register_resource(Resource::new(
             RequestType::POST,
-            "/image",
-            ResourceType::IMAGE,
-            || Ok(Response::new(StatusCode::OK, "static_test/test.jpg")),
+            "/image".to_string(),
+            ResourceType::BINARY,
+            || Ok(Response::new(StatusCode::OK, "static_test/test.jpg".to_string())),
         ));
         app.register_resource(Resource::new(
             RequestType::PUT,
-            "/image",
-            ResourceType::IMAGE,
-            || Ok(Response::new(StatusCode::OK, "static_test/test.jpg")),
+            "/image".to_string(),
+            ResourceType::BINARY,
+            || Ok(Response::new(StatusCode::OK, "static_test/test.jpg".to_string())),
         ));
         app.register_resource(Resource::new(
             RequestType::DELETE,
-            "/image",
-            ResourceType::IMAGE,
-            || Ok(Response::new(StatusCode::OK, "static_test/test.jpg")),
+            "/image".to_string(),
+            ResourceType::BINARY,
+            || Ok(Response::new(StatusCode::OK, "static_test/test.jpg".to_string())),
         ));
         app.register_resource(Resource::new(
             RequestType::GET,
-            "/redirect",
+            "/redirect".to_string(),
             ResourceType::REDIRECT,
-            || Ok(Response::new(StatusCode::OK, "static_test/redirect.html")),
+            || Ok(Response::new(StatusCode::OK, "static_test/redirect.html".to_string())),
         ));
         app.register_resource(Resource::new(
             RequestType::POST,
-            "/redirect",
+            "/redirect".to_string(),
             ResourceType::REDIRECT,
-            || Ok(Response::new(StatusCode::OK, "static_test/redirect.html")),
+            || Ok(Response::new(StatusCode::OK, "static_test/redirect.html".to_string())),
         ));
         app.register_resource(Resource::new(
             RequestType::PUT,
-            "/redirect",
+            "/redirect".to_string(),
             ResourceType::REDIRECT,
-            || Ok(Response::new(StatusCode::OK, "static_test/redirect.html")),
+            || Ok(Response::new(StatusCode::OK, "static_test/redirect.html".to_string())),
         ));
         app.register_resource(Resource::new(
             RequestType::DELETE,
-            "/redirect",
+            "/redirect".to_string(),
             ResourceType::REDIRECT,
-            || Ok(Response::new(StatusCode::OK, "static_test/redirect.html")),
+            || Ok(Response::new(StatusCode::OK, "static_test/redirect.html".to_string())),
         ));
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_flag_clone = stop_flag.clone();

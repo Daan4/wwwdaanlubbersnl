@@ -1,0 +1,5 @@
+templating engine, option to embed rust function output in html (to calculat render time)
+have functions that run before / after handling response
+automatically register resources in static folder for GET by default
+
+refactor as integration tests?

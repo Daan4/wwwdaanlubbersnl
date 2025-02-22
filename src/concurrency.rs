@@ -16,7 +16,7 @@ impl ThreadPool {
     /// # Panics
     ///
     /// The `new` function will panic if the size is zero.
-    pub fn new(size: usize) -> ThreadPool {
+    pub fn new(size: usize) -> Self {
         assert!(size > 0);
 
         let (sender, receiver) = mpsc::channel();
@@ -29,7 +29,7 @@ impl ThreadPool {
             workers.push(Worker::new(id, Arc::clone(&receiver)));
         }
 
-        ThreadPool {
+        Self {
             workers,
             sender: Some(sender),
         }
@@ -70,7 +70,7 @@ impl Worker {
     /// The id is the id of the worker and thread is the thread that the worker is running on.
     ///
     /// Todo: use std::thread::Builder and handle panics
-    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
+    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Self {
         let thread = thread::Builder::new()
             .name(format!("Worker {}", id))
             .spawn(move || loop {
@@ -94,7 +94,7 @@ impl Worker {
             Err(e) => panic!("Failed to create thread: {e:?}"),
         };
 
-        Worker {
+        Self {
             id,
             thread: Some(thread),
         }
