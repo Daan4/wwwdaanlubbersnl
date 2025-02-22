@@ -27,12 +27,12 @@ fn register_resources(app: &mut App) {
         RequestType::GET,
         "/maria".to_string(),
         ResourceType::REDIRECT,
-        || {
+        Box::new(|| {
             Ok(Response::new(
                 StatusCode::PermanentRedirect,
                 "https://www.mariagomez.art".to_string(),
             ))
-        },
+        }),
     ));
 }
 
@@ -49,11 +49,12 @@ fn register_all_resources_in_folder_for_get(app: &mut App, base_path: &str, fold
             _ => ResourceType::BINARY,
         };
 
+        let path = format!("{}/{}", base_path, file_name);
         let resource = Resource::new(
             RequestType::GET,
             format!("{}/{}", base_path, file_name),
             resource_type,
-            move || Ok(Response::new(StatusCode::OK, format!("{}/{}", base_path, file_name))),
+            Box::new(move || Ok(Response::new(StatusCode::OK, path.clone()))),
         );
         app.register_resource(resource);
     }

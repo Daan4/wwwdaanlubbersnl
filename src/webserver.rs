@@ -49,8 +49,10 @@ pub struct Resource
     request_type: RequestType,
     path: String,
     resource_type: ResourceType,
-    handler: fn() -> Result<Response, String>,
+    handler: ResourceHandler,
 }
+
+type ResourceHandler = Box<dyn Fn() -> Result<Response, String> + Send + Sync>;
 
 impl Resource
 {
@@ -58,7 +60,7 @@ impl Resource
         request_type: RequestType,
         path: String,
         resource_type: ResourceType,
-        handler: fn() -> Result<Response, String>,
+        handler: ResourceHandler,
     ) -> Self {
         Self {
             request_type,
@@ -418,7 +420,7 @@ mod tests {
             RequestType::GET,
             "/404".to_string(),
             ResourceType::TEXT,
-            || Ok(Response::new(StatusCode::NotFound, "static_test/404.html".to_string())),
+            Box::new(|| Ok(Response::new(StatusCode::NotFound, "static_test/404.html".to_string()))),
         ));
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_flag_clone = stop_flag.clone();
@@ -512,7 +514,7 @@ mod tests {
             RequestType::GET,
             "/".to_string(),
             ResourceType::TEXT,
-            || Err("Failed".to_string()),
+            Box::new(|| Err("Failed".to_string())),
         ));
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_flag_clone = stop_flag.clone();
@@ -537,18 +539,18 @@ mod tests {
             RequestType::GET,
             "/".to_string(),
             ResourceType::TEXT,
-            || Err("Failed".to_string()),
+            Box::new(|| Err("Failed".to_string())),
         ));
         app.register_resource_500(Resource::new(
             RequestType::GET,
             "/500".to_string(),
             ResourceType::TEXT,
-            || {
+            Box::new(|| {
                 Ok(Response::new(
                     StatusCode::InternalServerError,
                     "static_test/500.html".to_string(),
                 ))
-            },
+            }),
         ));
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_flag_clone = stop_flag.clone();
@@ -572,73 +574,73 @@ mod tests {
             RequestType::GET,
             "/html".to_string(),
             ResourceType::TEXT,
-            || Ok(Response::new(StatusCode::OK, "static_test/test.html".to_string())),
+            Box::new(|| Ok(Response::new(StatusCode::OK, "static_test/test.html".to_string()))),
         ));
         app.register_resource(Resource::new(
             RequestType::POST,
             "/html".to_string(),
             ResourceType::TEXT,
-            || Ok(Response::new(StatusCode::OK, "static_test/test.html".to_string())),
+            Box::new(|| Ok(Response::new(StatusCode::OK, "static_test/test.html".to_string()))),
         ));
         app.register_resource(Resource::new(
             RequestType::PUT,
             "/html".to_string(),
             ResourceType::TEXT,
-            || Ok(Response::new(StatusCode::OK, "static_test/test.html".to_string())),
+            Box::new(|| Ok(Response::new(StatusCode::OK, "static_test/test.html".to_string()))),
         ));
         app.register_resource(Resource::new(
             RequestType::DELETE,
             "/html".to_string(),
             ResourceType::TEXT,
-            || Ok(Response::new(StatusCode::OK, "static_test/test.html".to_string())),
+            Box::new(|| Ok(Response::new(StatusCode::OK, "static_test/test.html".to_string()))),
         ));
         app.register_resource(Resource::new(
             RequestType::GET,
             "/image".to_string(),
             ResourceType::BINARY,
-            || Ok(Response::new(StatusCode::OK, "static_test/test.jpg".to_string())),
+            Box::new(|| Ok(Response::new(StatusCode::OK, "static_test/test.jpg".to_string()))),
         ));
         app.register_resource(Resource::new(
             RequestType::POST,
             "/image".to_string(),
             ResourceType::BINARY,
-            || Ok(Response::new(StatusCode::OK, "static_test/test.jpg".to_string())),
+            Box::new(|| Ok(Response::new(StatusCode::OK, "static_test/test.jpg".to_string()))),
         ));
         app.register_resource(Resource::new(
             RequestType::PUT,
             "/image".to_string(),
             ResourceType::BINARY,
-            || Ok(Response::new(StatusCode::OK, "static_test/test.jpg".to_string())),
+            Box::new(|| Ok(Response::new(StatusCode::OK, "static_test/test.jpg".to_string()))),
         ));
         app.register_resource(Resource::new(
             RequestType::DELETE,
             "/image".to_string(),
             ResourceType::BINARY,
-            || Ok(Response::new(StatusCode::OK, "static_test/test.jpg".to_string())),
+            Box::new(|| Ok(Response::new(StatusCode::OK, "static_test/test.jpg".to_string()))),
         ));
         app.register_resource(Resource::new(
             RequestType::GET,
             "/redirect".to_string(),
             ResourceType::REDIRECT,
-            || Ok(Response::new(StatusCode::OK, "static_test/redirect.html".to_string())),
+            Box::new(|| Ok(Response::new(StatusCode::OK, "static_test/redirect.html".to_string()))),
         ));
         app.register_resource(Resource::new(
             RequestType::POST,
             "/redirect".to_string(),
             ResourceType::REDIRECT,
-            || Ok(Response::new(StatusCode::OK, "static_test/redirect.html".to_string())),
+            Box::new(|| Ok(Response::new(StatusCode::OK, "static_test/redirect.html".to_string()))),
         ));
         app.register_resource(Resource::new(
             RequestType::PUT,
             "/redirect".to_string(),
             ResourceType::REDIRECT,
-            || Ok(Response::new(StatusCode::OK, "static_test/redirect.html".to_string())),
+            Box::new(|| Ok(Response::new(StatusCode::OK, "static_test/redirect.html".to_string()))),
         ));
         app.register_resource(Resource::new(
             RequestType::DELETE,
             "/redirect".to_string(),
             ResourceType::REDIRECT,
-            || Ok(Response::new(StatusCode::OK, "static_test/redirect.html".to_string())),
+            Box::new(|| Ok(Response::new(StatusCode::OK, "static_test/redirect.html".to_string()))),
         ));
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_flag_clone = stop_flag.clone();
