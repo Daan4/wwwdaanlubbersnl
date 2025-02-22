@@ -23,7 +23,6 @@ fn main() {
 
 fn register_resources(app: &mut App) {
     register_all_resources_in_folder_for_get(app, "/", "static/html");
-    register_all_resources_in_folder_for_get(app, "/", "static/css");
     register_all_resources_in_folder_for_get(app, "/", "static/images");
 
     app.register_resource(Resource::new(
@@ -43,24 +42,26 @@ fn register_all_resources_in_folder_for_get(app: &mut App, base_path: &str, fold
     let files: fs::ReadDir = fs::read_dir(folder).unwrap();
     for file in files {
         let file = file.unwrap();
-        let file_name = file.file_name().into_string().unwrap();
+        let mut file_name = file.file_name().into_string().unwrap();
         let file_ext = match file_name.split('.').last() {
             Some(ext) => ext,
             None => "",
         };
+        let file_path = format!("{}/{}", folder, file_name);
         let resource_type = match file_ext {
-            "html" => ResourceType::TEXT,
+            "html" => {
+                file_name = file_name.replace(".html", "");
+                ResourceType::TEXT
+            }
             "css" => ResourceType::TEXT,
             "js" => ResourceType::TEXT,
             _ => ResourceType::BINARY,
         };
-
-        let path = format!("{}/{}", folder, file_name);
         let resource = Resource::new(
             RequestType::GET,
             format!("{}{}", base_path, file_name),
             resource_type,
-            Box::new(move || Ok(Response::new(StatusCode::OK, path.clone()))),
+            Box::new(move || Ok(Response::new(StatusCode::OK, file_path.clone()))),
         );
         app.register_resource(resource);
     }

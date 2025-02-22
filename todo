@@ -3,3 +3,5 @@ have functions that run before / after handling response
 automatically register resources in static folder for GET by default
 
 refactor as integration tests?
+
+logging
