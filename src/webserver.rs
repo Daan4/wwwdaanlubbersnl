@@ -190,7 +190,7 @@ impl App {
         }
     }
 
-    fn handle_html(&self, path: &str, mut status: StatusCode, stream: &mut TcpStream) {
+    fn handle_html(&self, path: &str, status: StatusCode, stream: &mut TcpStream) {
         let content = match fs::read_to_string(path) {
             Ok(content) => content,
             Err(_) => {
@@ -217,7 +217,7 @@ impl App {
         }
     }
 
-    fn handle_image(&self, path: &str, mut status: StatusCode, stream: &mut TcpStream) {
+    fn handle_image(&self, path: &str, status: StatusCode, stream: &mut TcpStream) {
         let content = match fs::read(path) {
             Ok(content) => content,
             Err(_) => {

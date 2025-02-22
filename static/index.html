@@ -1,11 +1,62 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
   <head>
+    <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico">
     <meta charset="utf-8">
-    <title>Hello!</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>www.daanlubbers.nl</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
   </head>
   <body>
-    <h1>Hello!</h1>
-    <p>Hi from Rust</p>
+    <div class="container">
+        <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+            <div id="navbarColor01">
+                <ul class="navbar-nav mr-auto">
+                        <li class="nav-item">
+                                <a class="nav-link active" href="/">Home</a>
+                        </li>
+                        <li class="nav-item">
+                                <a class="nav-link" href="/user/login">Log in</a>
+                        </li>
+                </ul>
+            </div>
+            <span class="text-white ml-auto" id="digital_clock"></span>
+        </nav>    
+        <div class="jumbotron">
+    <h4>Links</h4>
+    <p><a href="https://www.linkedin.com/in/daanlubbers" class="text-dark"><img src="/static/linkedin_logo.png" style="height:32px;"/> &nbsp;&nbsp;LinkedIn - My resume</a></p>
+    <p><a href="https://www.mariagomez.art" class="text-dark"><img src="/static/maria_logo.png" style="height:32px;"/>&nbsp;&nbsp;María Gómez Art</a></p>
+    <p><a href="https://www.github.com/Daan4" class="text-dark"><img src="/static/github_logo.png" style="width:32px;"/> &nbsp;&nbsp;GitHub - My repositories</a></p>
+    <p><a href="https://medium.com/@daan_lubbers" class="text-dark"><img src="/static/medium_logo.webp" style="width:32px;"/> &nbsp;&nbsp;Medium - My articles</a></p>
+    <p><a href="https://www.nano.org" class="text-dark"><img src="/static/nano_logo.png" style="width:32px;"/> &nbsp;&nbsp;Nano Currency - Digital money for the modern world</a></p>
+    <p><a href="https://lichess.org/@/dnl" class="text-dark"><img src="/static/lichess_logo.webp" style="width:32px;"/> &nbsp;&nbsp;Lichess - Challenge me</a></p>
+        </div>
+        <footer class="blockquote-footer text-center">
+            Rendered with <a href="https://www.rust-lang.org/" class="text-dark">Rust</a> <span class="text-primary">·</span> <a href="https://github.com/Daan4/wwwdaanlubbersnl" class="text-dark">source code</a> <span class="text-primary">·</span> © Daan Lubbers 2025 <span class="text-primary">·</span> <a href="mailto:contact@daanlubbers.nl" class="text-dark">contact@daanlubbers.nl</a>
+        </footer>
+    </div>
+    <script>
+        function startTime() {
+            var today = new Date();
+            var h = today.getHours();
+            var m = today.getMinutes();
+            var s = today.getSeconds();
+            var d = today.getDate();
+            var M = today.getMonth();
+            var y = today.getYear();
+            m = checkTime(m);
+            s = checkTime(s);
+            document.getElementById('digital_clock').innerHTML =
+            ("0" + h).slice(-2) + ":" + ("0" + m).slice(-2) + ":" + ("0" + s).slice(-2) + " " + ("0" + d).slice(-2) + "/" + ("0" + (M + 1)).slice(-2) + "/" + (y + 1900);
+            var t = setTimeout(startTime, 500);
+        }
+        function checkTime(i) {
+            if (i < 10) {i = "0" + i};
+            return i;
+        }
+        startTime();
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.slim.min.js" integrity="sha256-kmHvs0B+OpCW5GVHUNjv9rOmY0IvSIRcf7zGUDTDQM8=" crossorigin="anonymous"></script>
   </body>
 </html>
